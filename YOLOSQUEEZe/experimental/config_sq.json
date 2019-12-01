@@ -1,0 +1,37 @@
+{
+    "model" : {
+        "backend":              "SqueezeNet",
+        "input_size":           224,
+        "anchors":              [1.769231,1.692308, 2.307692,2.307692, 2.538462,2.615385, 2.769231,2.846154, 3.153846,3.153846],
+        "max_box_per_image":    10,        
+        "labels":               ["gball"]
+    },
+
+    "train": {
+        "train_image_folder":   "/home/ali/data/images/",
+        "train_annot_folder":   "/home/ali/data/annotations/",     
+          
+        "train_times":          40,
+        "pretrained_weights":   "/home/ali/CLionProjects/object_detection/SqueezeDet/squeezedet/pretrained_models/pretrained/squeezenet_backend.h5",
+	"learning_rate": 10e-5,		
+        "batch_size":           4,
+        "nb_epochs":            50,
+        "warmup_epochs":        5,
+
+        "object_scale":         5.0 ,
+        "no_object_scale":      1.0,
+        "coord_scale":          1.0,
+        "class_scale":          1.0,
+
+        "saved_weights_name":   "./results/weights/gball_squeezenet_backend_01.h5",
+	"saved_tb_dir":         "./results/logs/",
+        "debug":                true
+    },
+
+    "valid": {
+        "valid_image_folder":   "",
+        "valid_annot_folder":   "",
+
+        "valid_times":          1
+    }
+}
