@@ -1,0 +1,12 @@
+*.zip
+*.tar
+*.mlmodel
+*.hdf5
+*.h5
+*.jpg
+*.png
+*.weights
+pretrained_models/*
+YOLOSQUEEZe/results/*
+*.bin
+*.gz
