@@ -66,6 +66,11 @@ def parse_annotation_txt(ann_dir, img_dir, labels=[]):
     for ann in sorted(os.listdir(ann_dir)):
         img = {'object':[]}
         # reading txt lines
+        with open(ann_dir + ann, 'r') as f:
+            lbl_lines = f.readlines()
+
+        for line in lbl_lines:
+            pass
 
 
 

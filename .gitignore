@@ -10,3 +10,5 @@ pretrained_models/*
 YOLOSQUEEZe/results/*
 *.bin
 *.gz
+*.pth
+

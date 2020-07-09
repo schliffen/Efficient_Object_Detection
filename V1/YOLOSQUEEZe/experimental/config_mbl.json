@@ -4,15 +4,15 @@
         "input_size":           224,
         "anchors":              [0.57273, 0.677385, 1.87446, 2.06253, 3.33843, 5.47434, 7.88282, 3.52778, 9.77052, 9.16828],
         "max_box_per_image":    10,        
-        "labels":               ["raccoon"]
+        "labels":               ["gun"]
     },
 
     "train": {
-        "train_image_folder":   "/home/ali/CLionProjects/object_detection/SqueezeDet/raccoon_dataset-master/images/",
-        "train_annot_folder":   "/home/ali/CLionProjects/object_detection/SqueezeDet/raccoon_dataset-master/annotations/",     
+        "train_image_folder":   "../../data/images/",
+        "train_annot_folder":   "../../data/annotations/",
           
         "train_times":          10,
-        "pretrained_weights":   "/home/ali/CLionProjects/object_detection/SqueezeDet/squeezedet/pretrained_models/pretrained/mobilenet_backend.h5",
+        "pretrained_weights":   "",
         "batch_size":           4,
         "learning_rate":        1e-5,
         "nb_epochs":            1,
@@ -23,7 +23,7 @@
         "coord_scale":          1.0,
         "class_scale":          1.0,
 
-        "saved_weights_name":   "./results/raccoon_mobilenet_backend_01.h5",
+        "saved_weights_name":   "../results/gun_mobilenet_backend_01.h5",
         "debug":                true
     },
 
