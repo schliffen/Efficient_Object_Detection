@@ -158,9 +158,9 @@ def test(data,
 
         # Plot images
         # if batch_i < 10:
-        f = Path(save_dir) / ('./inference/testdatainfer/test_batch%g_gt.jpg' % batch_i)  # filename
+        f = Path(save_dir) / ('./inference/' + weights.split('/')[-1][:-3] + 'test_batch%g_gt.jpg' % batch_i)  # filename
         plot_images(img, targets, paths, str(f), names)  # ground truth
-        f = Path(save_dir) / ('./inference/testdatainfer/test_batch%g_pred.jpg' % batch_i)
+        f = Path(save_dir) / ('./inference/' + weights.split('/')[-1][:-3] + 'test_batch%g_pred.jpg' % batch_i)
         plot_images(img, output_to_target(output, width, height), paths, str(f), names)  # predictions
 
     # Compute statistics

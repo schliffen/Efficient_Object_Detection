@@ -5,11 +5,17 @@ import glob, os, sys
 import numpy as np
 import shutil
 
-source_data_dir = "/home/ali/ProjLAB/data/NEWGUN/"
+source_data_dir = "/home/ali/ProjLAB/DATA/NEWGUN/"
 
-dest_train_dir = "/home/ali/ProjLAB/data/NEWGUN/train/"
-dest_test_dir = "/home/ali/ProjLAB/data/NEWGUN/test/"
-dest_val_dir = "/home/ali/ProjLAB/data/NEWGUN/val/"
+dest_train_dir = "/home/ali/ProjLAB/DATA/NEWGUN/train/"
+dest_test_dir = "/home/ali/ProjLAB/DATA/NEWGUN/test/"
+dest_val_dir = "/home/ali/ProjLAB/DATA/NEWGUN/val/"
+if not os.path.exists(dest_train_dir):
+    os.mkdir(dest_train_dir)
+if not os.path.exists(dest_test_dir):
+    os.mkdir(dest_test_dir)
+if not os.path.exists(dest_val_dir):
+    os.mkdir(dest_val_dir)
 
 if __name__ == "__main__":
 
