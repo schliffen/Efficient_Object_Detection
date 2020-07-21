@@ -81,6 +81,9 @@ def train(hyp):
     # Create model
     model = Model(opt.cfg, nc=nc).to(device)
 
+    # torch.save(model.state_dict(), './runs/exp8_yolov5s_train/weights/statedict_yolov5s_3.pth')
+    # model.load_state_dict(torch.load('./runs/exp8_yolov5s_train/weights/statedict_yolov5s_3.pth'))
+
     # Image sizes
     gs = int(max(model.stride))  # grid size (max stride)
     imgsz, imgsz_test = [check_img_size(x, gs) for x in opt.img_size]  # verify imgsz are gs-multiples
@@ -323,7 +326,7 @@ def train(hyp):
             best_fitness = fi
 
         # Save model
-        save = (not opt.nosave) or (final_epoch and not opt.evolve)
+        save = True # (epoch + 1) % 5 ==0 # (not opt.nosave) or (final_epoch and not opt.evolve)
         if save:
             with open(results_file, 'r') as f:  # create checkpoint
                 ckpt = {'epoch': epoch,
@@ -333,9 +336,20 @@ def train(hyp):
                         'optimizer': None if final_epoch else optimizer.state_dict()}
 
             # Save last, best and delete
-            torch.save(ckpt, last)
+            # Save last, best and delete
+            # save state dict instead
+
+            if not final_epoch:
+                #torch.save(ckpt, wdir + 'train_' + str(epoch) + '.pt')
+                torch.save( model.state_dict(), wdir + 'std_train_' + str(epoch) + '.pt' )
+
+            else:
+                # torch.save(ckpt, last)
+                torch.save(model.state_dict(),  last )
             if (best_fitness == fi) and not final_epoch:
-                torch.save(ckpt, best)
+                torch.save(model.state_dict(), best )
+                # torch.save(ckpt, best)
+       
             del ckpt
 
         # end epoch ----------------------------------------------------------------------------------------------------
@@ -363,11 +377,11 @@ def train(hyp):
 if __name__ == '__main__':
     check_git_status()
     parser = argparse.ArgumentParser()
-    parser.add_argument('--cfg', type=str, default='models/yolov5s.yaml', help='model.yaml path')
+    parser.add_argument('--cfg', type=str, default='models/yolov5m.yaml', help='model.yaml path')
     parser.add_argument('--data', type=str, default='./data/gun_dataset.yaml', help='data.yaml path')
     parser.add_argument('--hyp', type=str, default='', help='hyp.yaml path (optional)')
-    parser.add_argument('--epochs', type=int, default=300)
-    parser.add_argument('--batch-size', type=int, default=24)
+    parser.add_argument('--epochs', type=int, default=350)
+    parser.add_argument('--batch-size', type=int, default=8)
     parser.add_argument('--img-size', nargs='+', type=int, default=[416, 416], help='train,test sizes')
     parser.add_argument('--rect', action='store_true', help='rectangular training')
     parser.add_argument('--resume', nargs='?', const='get_last', default='store_false',
@@ -378,8 +392,8 @@ if __name__ == '__main__':
     parser.add_argument('--evolve', action='store_true', help='evolve hyperparameters')
     parser.add_argument('--bucket', type=str, default='', help='gsutil bucket')
     parser.add_argument('--cache-images', action='store_true', help='cache images for faster training')
-    parser.add_argument('--weights', type=str, default='./weights/yolov5s.pt', help='initial weights path')
-    parser.add_argument('--name', default='yolov5s_train', help='renames results.txt to results_name.txt if supplied')
+    parser.add_argument('--weights', type=str, default='./weights/yolov5m.pt', help='initial weights path')
+    parser.add_argument('--name', default='yolov5m_train', help='renames results.txt to results_name.txt if supplied')
     parser.add_argument('--device', default='0', help='cuda device, i.e. 0 or 0,1,2,3 or cpu')
     parser.add_argument('--multi-scale', action='store_true', help='vary img-size +/- 50%%')
     parser.add_argument('--single-cls', action='store_true', help='train as single-class dataset')

@@ -1,0 +1,21 @@
+cfg: models/yolov5m.yaml
+data: ./data/gun_dataset.yaml
+hyp: ''
+epochs: 350
+batch_size: 8
+img_size:
+- 416
+- 416
+rect: false
+resume: store_false
+nosave: true
+notest: true
+noautoanchor: true
+evolve: false
+bucket: ''
+cache_images: false
+weights: ./weights/yolov5m.pt
+name: yolov5m_train
+device: '0'
+multi_scale: false
+single_cls: false
