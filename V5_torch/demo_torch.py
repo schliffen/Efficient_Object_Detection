@@ -8,11 +8,20 @@ import time
 # import required packages
 import cv2
 import torch
+import onnx
+# import onnxruntime
+from onnx import optimizer, shape_inference
+import onnx.utils
+
 import torchvision
 import matplotlib
 matplotlib.use('qt5agg')
 import matplotlib.pyplot as plt
+import uuid
+
 import argparse
+
+from demoModelYolov5 import Model
 
 
 # handle command line arguments
@@ -21,14 +30,19 @@ ap.add_argument('-s', '--source',  default="video" ,
                 help = 'test data source: image or video')
 ap.add_argument('-i', '--sourceDir',  default="/home/ali/ProjLAB/Efficient_Object_Detection/videos/" ,
                 help = 'path to input image')
-ap.add_argument('-v', '--video',  default="test_01.mp4",
+ap.add_argument('-cg', '--cfg', default='models/yolov5m.yaml')
+ap.add_argument('-ms', '--msdict', default='weights/std_train_109.pt')
+# ap.add_argument('-ox', '--onx', default='weights/std_train_0.onnx')
+ap.add_argument('-v', '--video',  default="test_04.mp4",
                 help = 'path to input image')
-ap.add_argument('-c', '--trlogs',  default="./runs/oldData/exp10_yolov5s_train/",
+ap.add_argument('-c', '--trlogs',  default="./runs/exp10_yolov5m_train/",
                 help = 'path to yolo config file')
-ap.add_argument('-w', '--weights',  default= "weights/last_yolov5s_train.pt",
+ap.add_argument('-w', '--best',  default= "weights/best.pt",
                 help = 'path to yolo pre-trained weights')
-ap.add_argument('-cl', '--classes',  default="./weights/classes.txt",
-                help = 'path to text file containing class names')
+# ap.add_argument('-cl', '--classes',  default="./weights/classes.txt",
+#                 help = 'path to text file containing class names')
+ap.add_argument('-si', '--cimgs', default='')
+
 ap.add_argument('-dv', '--device', default='0', help='device type to be used: cpu or 0, 1, 2, ...')
 args = ap.parse_args()
 
@@ -209,6 +223,84 @@ def clip_coords(boxes, img_shape):
     boxes[ 3] = min(img_shape[0], boxes[3])  # y2
     return boxes
 
+def export_onnx(model, path, device):
+    dummy_input = torch.randn(1, 3, 416, 416, device=device)
+    model_dir = path[:-3] + '.onnx'
+    if args.device == 'cpu':
+        torch.onnx.export(model,
+                          dummy_input,
+                          model_dir,
+                          input_names='inp',
+                          output_names='yout'
+                          )
+        # Test load model back in with onnx
+        print("Test loading model with ONNX")
+        original_model = onnx.load( model_dir )
+        # optimizing the model
+        # A full list of supported optimization passes can be found using get_available_passes()
+        all_passes = optimizer.get_available_passes()
+        print("Available optimization passes:")
+        passes = []
+        for p in all_passes:
+            passes.append(p)
+            print(p)
+        print()
+
+        # # Pick one pass as example
+        # passes = ['fuse_consecutive_transposes']
+        #
+        # # Apply the optimization on the original model
+        # optimized_model = optimizer.optimize(original_model, passes)
+        # polished_model = onnx.utils.polish_model(original_model)
+        #
+        # # save the model
+        # onnx.save_model(optimized_model, path[:-3] + '_optimized.onnx' )
+
+
+    else:
+        torch.onnx.export(model,
+                          dummy_input,
+                          model_dir,
+                          input_names='inp',
+                          output_names='yout'
+                          )
+        # Test load model back in with onnx
+        print("Test loading model with ONNX")
+        original_model = onnx.load( model_dir )
+        # optimizing the model
+        # A full list of supported optimization passes can be found using get_available_passes()
+        all_passes = optimizer.get_available_passes()
+        print("Available optimization passes:")
+        for p in all_passes:
+            print(p)
+        print()
+
+        # Pick one pass as example
+        passes = ['fuse_consecutive_transposes']
+
+        # Apply the optimization on the original model
+        optimized_model = optimizer.optimize(original_model, passes)
+        polished_model = onnx.utils.polish_model(model)
+
+        # save the model
+        onnx.save_model(optimized_model, path[:-3] + '_optimized.onnx' )
+
+    # # Check that the IR is well formed
+    # onnx.checker.check_model(onnx_model)
+    # # Print a human readable representation of the graph
+    # onnx.helper.printable_graph(onnx_model.graph)
+
+    print("Test successful!")
+    return optimized_model
+
+def save_torch_model(model, path):
+    torch.save( model.state_dict(), './runs/exp0_yolov5s_train/statedict_yolov5s.pth')
+
+
+def to_numpy(tensor):
+    return tensor.detach().cpu().numpy() if tensor.requires_grad else tensor.cpu().numpy()
+
+
 if __name__ == '__main__':
     #
     augment = False
@@ -217,8 +309,24 @@ if __name__ == '__main__':
     device = select_device(args.device, batch_size=1)
 
     # Load model
-    model = attempt_load(args.trlogs + args.weights, map_location=device)  # load FP32 model
-    imgsz = check_img_size(imgsz, s=model.stride.max())  # check img_size
+    # model = attempt_load(args.trlogs + args.weights, map_location=device)  # load FP32 model
+    # imgsz = check_img_size(imgsz, s=model.stride.max())  # check img_size
+    # torch.save(model.state_dict(), args.trlogs + args.msdict)
+    # second way of loading the model
+    model = Model(args.cfg, nc=1).to(device)
+    #
+    # torch.save(model.state_dict(), args.trlogs + args.msdict)
+
+    # loading model weights (state dict)
+    model.load_state_dict(torch.load(args.trlogs + args.msdict)) # './runs/exp0_yolov5s_train/statedict_yolov5s_2.pth'
+    # saving as onnx model
+    onnx_model = export_onnx(model, args.trlogs + args.msdict, device)
+
+    # loading onnx inference
+    # ort_session = onnxruntime.InferenceSession( (args.trlogs + args.msdict)[:-3] + '.onnx' )
+    # onx_model =    onnx.load_model((args.trlogs + args.msdict)[:-3] + '.onnx')
+
+
 
     # Half
     half = device.type != 'cpu'  # half precision only supported on CUDA
@@ -232,11 +340,17 @@ if __name__ == '__main__':
     # Disable gradients
     t0, t1 = 0., 0.
 
+    cap.set(1, 9100)
+
+    cv2.namedWindow('img', cv2.WINDOW_FREERATIO)
+
     rat = True
     while rat:
         rat, img = cap.read()
         img = cv2.resize(img, (imgsz, imgsz))
-
+        primg = img.copy()
+        # current frame
+        currFrameNo = cap.get(cv2.CAP_PROP_POS_FRAMES)
         with torch.no_grad():
             # image to tensor
             imgt = torch.tensor(np.expand_dims(img.transpose(2,0,1)/255.,0)).half()
@@ -245,13 +359,22 @@ if __name__ == '__main__':
             # if device != 'cpu':
             #     imgtc = imgt.cuda()
             # Run model
+
+            # onnx model
+            # compute ONNX Runtime output prediction
+            # ort_inputs = {ort_session.get_inputs()[0].name: to_numpy( imgtc ) }
+            # ort_outs = ort_session.run(None, ort_inputs)
+
             t = time_synchronized()
-            inf_out, train_out = model(imgtc, augment=augment)  # inference and training outputs
+            torch_out, train_out = model(imgtc, augment=augment)  # inference and training outputs
             t0 += time_synchronized() - t
+
+            # comparing onnx and pytorch results
+            # np.testing.assert_allclose(to_numpy(torch_out), ort_outs[0], rtol=1e-03, atol=1e-05)
 
             # Run NMS
             t = time_synchronized()
-            output = non_max_suppression(inf_out, conf_thres=conf_thres, iou_thres=iou_thres, merge=merge)
+            output = non_max_suppression(torch_out, conf_thres=conf_thres, iou_thres=iou_thres, merge=merge)
             t1 += time_synchronized()
 
             # Statistics per image
@@ -266,11 +389,17 @@ if __name__ == '__main__':
                 #
                 # box = pred[:, :4].clone()  # xyxy
                 # print( box)
-                cv2.rectangle(img, (pred[0], pred[1]), (pred[2], pred[3]), (1,1,255), 1)
-                cv2.putText(img, str(pred[4]), (pred[0], pred[3]), cv2.FONT_HERSHEY_COMPLEX, 1, (1,255,1))
-                cv2.imshow('img', img)
-                cv2.waitKey(0)
 
+                cv2.rectangle(primg, (pred[0], pred[1]), (pred[2], pred[3]), (1,1,255), 1)
+                cv2.putText(primg, str(pred[4]), (pred[0], pred[3]), cv2.FONT_HERSHEY_COMPLEX, 1, (1,255,1))
+
+
+
+            # wether to save the image
+            cv2.imshow('img', primg)
+            key = cv2.waitKey(0)
+            if  key == ord('s'):
+                cv2.imwrite( img, args.cimgs + str(uuid.uuid4()) + '.jpg' )
 
 
 

@@ -6,13 +6,14 @@ import torch.optim as optim
 import torch.optim.lr_scheduler as lr_scheduler
 import torch.utils.data
 from torch.utils.tensorboard import SummaryWriter
+import torch_optimizer as topt
 
 import test  # import test.py to get mAP after each epoch
 from models.yolo import Model
 from utils import google_utils
 from utils.datasets_old import *
 from utils.utils import *
-
+import pickle
 mixed_precision = True
 try:  # Mixed precision training https://github.com/NVIDIA/apex
     from apex import amp
@@ -21,7 +22,7 @@ except:
     mixed_precision = False  # not installed
 
 # Hyperparameters
-hyp = {'optimizer': 'SGD',  # ['adam', 'SGD', None] if none, default is SGD
+hyp = {'optimizer': 'qhadam',  # ['adam', 'SGD', None] if none, default is SGD
        'lr0': 0.01,  # initial learning rate (SGD=1E-2, Adam=1E-3)
        'momentum': 0.937,  # SGD momentum/Adam beta1
        'weight_decay': 5e-4,  # optimizer weight decay
@@ -66,10 +67,10 @@ def train(hyp):
     init_seeds(1)
     with open(opt.data) as f:
         data_dict = yaml.load(f, Loader=yaml.FullLoader)  # model dict
-    train_list = data_dict['train']
-    val_list = data_dict['val']
-    train = data_dict['train']
-    val = data_dict['val']
+    data_dir = data_dict['data']
+    imgdir = data_dict['images']
+    # lbldir = data_dict['labels']
+    # val = data_dict['val']
 
     nc, names = (1, ['item']) if opt.single_cls else (int(data_dict['nc']), data_dict['names'])  # number classes, names
     assert len(names) == nc, '%g names found for nc=%g dataset in %s' % (len(names), nc, opt.data)  # check
@@ -80,6 +81,9 @@ def train(hyp):
 
     # Create model
     model = Model(opt.cfg, nc=nc).to(device)
+
+    # torch.save(model.state_dict(), './runs/exp8_yolov5s_train/weights/statedict_yolov5s_3.pth')
+    # model.load_state_dict(torch.load('./runs/exp8_yolov5s_train/weights/statedict_yolov5s_3.pth'))
 
     # Image sizes
     gs = int(max(model.stride))  # grid size (max stride)
@@ -101,8 +105,11 @@ def train(hyp):
 
     if hyp['optimizer'] == 'adam':  # https://pytorch.org/docs/stable/_modules/torch/optim/lr_scheduler.html#OneCycleLR
         optimizer = optim.Adam(pg0, lr=hyp['lr0'], betas=(hyp['momentum'], 0.999))  # adjust beta1 to momentum
+    elif hyp['optimizer'] =='qhadam':
+        optimizer = topt.QHAdam(pg0, lr=hyp['lr0'], betas=(hyp['momentum'], 0.999) )
     else:
         optimizer = optim.SGD(pg0, lr=hyp['lr0'], momentum=hyp['momentum'], nesterov=True)
+
 
     optimizer.add_param_group({'params': pg1, 'weight_decay': hyp['weight_decay']})  # add pg1 with weight_decay
     optimizer.add_param_group({'params': pg2})  # add pg2 (biases)
@@ -163,17 +170,53 @@ def train(hyp):
         # model = torch.nn.SyncBatchNorm.convert_sync_batchnorm(model).to(device)  # requires world_size > 1
         model = torch.nn.parallel.DistributedDataParallel(model)
 
+    # loading all data
+    with open( opt.dataList, 'r' ) as f:
+        data_list = f.readlines()
+
+    train_list = []
+    val_list = []
+    test_list = []
+
+    print('checking data. please wait ... ')
+    for line in data_list:
+        # randomly splitting train, vel, test list
+        selector = np.random.randint(0,100)
+        if selector < 10:
+            if os.path.exists(data_dir + imgdir + line[:-1]):
+                test_list.append( data_dir + imgdir + line[:-1])
+        elif selector < 20:
+            if os.path.exists(data_dir + imgdir + line[:-1]):
+                val_list.append( data_dir + imgdir + line[:-1] )
+        else:
+            if os.path.exists(data_dir + imgdir + line[:-1]):
+                train_list.append( data_dir + imgdir + line[:-1])
+
+
+
     # Trainloader
-    dataloader, dataset = create_dataloader( train, imgsz, batch_size, gs, opt,
-                                            hyp=hyp, augment=True, cache=opt.cache_images, rect=opt.rect)
+    dataloader, dataset = create_dataloader( train_list, imgsz, batch_size, gs, opt,
+                                            hyp=hyp, augment=True, cache=opt.cache_images,
+                                             rect=opt.rect, dataform='train',
+                                             rgb_mean = [0,0,0], randomImg = opt.randomImg)
+    # --
+    # getting data from datasetloader
+    # # img, lbl, _, _ = next(dataset)
+    # for i, targets, in enumerate(dataloader):
+    #     print(i)
+
     mlc = np.concatenate(dataset.labels, 0)[:, 0].max()  # max label class
     nb = len(dataloader)  # number of batches
     assert mlc < nc, 'Label class %g exceeds nc=%g in %s. Correct your labels or your model.' % (mlc, nc, opt.cfg)
 
     # Testloader
-    testloader = create_dataloader( val, imgsz_test, batch_size, gs, opt,
-                                   hyp=hyp, augment=False, cache=opt.cache_images, rect=True)[0]
+    testloader = create_dataloader( val_list, imgsz_test, batch_size, gs, opt,
+                                   hyp=hyp, augment=False, cache=opt.cache_images, rect=True, dataform='eval')[0]
 
+
+    # for lbl, img in enumerate(testloader):
+    #     print(lbl)
+    #     break
     # Model parameters
     hyp['cls'] *= nc / 80.  # scale coco-tuned hyp['cls'] to current dataset
     model.nc = nc  # attach number of classes to model
@@ -227,7 +270,7 @@ def train(hyp):
         pbar = tqdm(enumerate(dataloader), total=nb)  # progress bar
         for i, (imgs, targets, paths, _) in pbar:  # batch -------------------------------------------------------------
             ni = i + nb * epoch  # number integrated batches (since train start)
-            imgs = imgs.to(device, non_blocking=True).float() / 255.0  # uint8 to float32, 0 - 255 to 0.0 - 1.0
+            imgs = imgs.to(device, non_blocking=True).float() #/ 255.0  # uint8 to float32, 0 - 255 to 0.0 - 1.0
 
             # Warmup
             if ni <= nw:
@@ -252,6 +295,9 @@ def train(hyp):
             pred = model(imgs)
 
             # Loss
+            # print('pred shape: ',pred[1].shape )
+            # print('target shape: ', targets )
+
             loss, loss_items = compute_loss(pred, targets.to(device), model)
             if not torch.isfinite(loss):
                 print('WARNING: non-finite loss, ending training ', loss_items)
@@ -323,7 +369,7 @@ def train(hyp):
             best_fitness = fi
 
         # Save model
-        save = (not opt.nosave) or (final_epoch and not opt.evolve)
+        save = (epoch + 1) % 5 ==0 # (not opt.nosave) or (final_epoch and not opt.evolve)
         if save:
             with open(results_file, 'r') as f:  # create checkpoint
                 ckpt = {'epoch': epoch,
@@ -333,9 +379,20 @@ def train(hyp):
                         'optimizer': None if final_epoch else optimizer.state_dict()}
 
             # Save last, best and delete
-            torch.save(ckpt, last)
+            # Save last, best and delete
+            # save state dict instead
+
+            if not final_epoch:
+                #torch.save(ckpt, wdir + 'train_' + str(epoch) + '.pt')
+                torch.save( model.state_dict(), wdir + 'std_train_' + str(epoch) + '.pt' )
+
+            else:
+                # torch.save(ckpt, last)
+                torch.save(model.state_dict(),  last )
             if (best_fitness == fi) and not final_epoch:
-                torch.save(ckpt, best)
+                torch.save(model.state_dict(), best )
+                # torch.save(ckpt, best)
+       
             del ckpt
 
         # end epoch ----------------------------------------------------------------------------------------------------
@@ -361,15 +418,15 @@ def train(hyp):
 
 
 if __name__ == '__main__':
-    check_git_status()
+    # check_git_status()
     parser = argparse.ArgumentParser()
-    parser.add_argument('--cfg', type=str, default='models/yolov5s.yaml', help='model.yaml path')
+    parser.add_argument('--cfg', type=str, default='models/yolov5m.yaml', help='model.yaml path')
     parser.add_argument('--data', type=str, default='./data/gun_dataset.yaml', help='data.yaml path')
     parser.add_argument('--hyp', type=str, default='', help='hyp.yaml path (optional)')
-    parser.add_argument('--epochs', type=int, default=300)
-    parser.add_argument('--batch-size', type=int, default=24)
+    parser.add_argument('--epochs', type=int, default=350)
+    parser.add_argument('--batch-size', type=int, default=32)
     parser.add_argument('--img-size', nargs='+', type=int, default=[416, 416], help='train,test sizes')
-    parser.add_argument('--rect', action='store_true', help='rectangular training')
+    parser.add_argument('--rect', default=True, action='store_true', help='rectangular training')
     parser.add_argument('--resume', nargs='?', const='get_last', default='store_false',
                         help='resume from given path/to/last.pt, or most recent run if blank.')
     parser.add_argument('--nosave', action='store_false', help='only save final checkpoint')
@@ -378,11 +435,14 @@ if __name__ == '__main__':
     parser.add_argument('--evolve', action='store_true', help='evolve hyperparameters')
     parser.add_argument('--bucket', type=str, default='', help='gsutil bucket')
     parser.add_argument('--cache-images', action='store_true', help='cache images for faster training')
-    parser.add_argument('--weights', type=str, default='./weights/yolov5s.pt', help='initial weights path')
-    parser.add_argument('--name', default='yolov5s_train', help='renames results.txt to results_name.txt if supplied')
+    parser.add_argument('--weights', type=str, default='./weights/yolov5m.pt', help='initial weights path')
+    parser.add_argument('--name', default='yolov5m_train', help='renames results.txt to results_name.txt if supplied')
     parser.add_argument('--device', default='0', help='cuda device, i.e. 0 or 0,1,2,3 or cpu')
     parser.add_argument('--multi-scale', action='store_true', help='vary img-size +/- 50%%')
     parser.add_argument('--single-cls', action='store_true', help='train as single-class dataset')
+    parser.add_argument('--dataList', default= './data/train_img_list.txt', help='path to the data list')
+    parser.add_argument('--randomImg', default='/home/ali/ProjLAB/DATA/NEWGUN/images/', help='path to the random images for crop and paste')
+
     opt = parser.parse_args()
 
     last = get_latest_run() if opt.resume == 'get_last' else opt.resume  # resume from most recent run
@@ -454,3 +514,5 @@ if __name__ == '__main__':
 
             # Plot results
             # plot_evolution_results(hyp)
+
+

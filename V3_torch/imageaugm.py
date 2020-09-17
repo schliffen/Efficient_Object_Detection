@@ -257,7 +257,7 @@ class ImgAugTransform():
             # cv2.imshow('mix', vis_img2.astype('uint8'))
             # cv2.waitKey(0)
 
-        elif selector in [3,4,5,6]:
+        elif selector in [3,4,5,6,7]:
             kps = BoundingBoxesOnImage([
                                     BoundingBox(x1=target[0][0], y1=target[0][1], x2 = target[0][2], y2 = target[0][3] ),
                                     # Keypoint(x=target[0][2], y=target[0][3])
